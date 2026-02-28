@@ -133,6 +133,8 @@ func testdataDir(t *testing.T) string {
 	return filepath.Join(filepath.Dir(thisFile), "testdata")
 }
 
+
+
 func TestExtractFileURI_AbsolutePath(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("unix paths")
@@ -239,6 +241,31 @@ func TestFindPackageRoot_NotFound(t *testing.T) {
 	_, err := findPackageRoot("/nonexistent/file.yml")
 	if err == nil {
 		t.Error("expected error for non-existent path")
+	}
+}
+
+func TestValidatePackage_DanglingDashboardRef(t *testing.T) {
+	// This fixture has a dangling tag reference in a dashboard JSON file.
+	// The error should map to the specific dashboard file, not the manifest.
+	pkg := filepath.Join(testdataDir(t), "invalid_dashboard")
+	diags := validatePackage(pkg)
+	if len(diags) == 0 {
+		t.Fatal("expected diagnostics for package with dangling dashboard ref")
+	}
+
+	dashboardURI := pathToURI(filepath.Join(pkg, "kibana", "dashboard", "test_invalid_dashboard-overview.json"))
+	dd, ok := diags[dashboardURI]
+	if !ok {
+		for uri := range diags {
+			t.Errorf("got diagnostics for %s, wanted %s", uri, dashboardURI)
+		}
+		t.FailNow()
+	}
+	if len(dd) != 1 {
+		t.Errorf("expected 1 diagnostic, got %d", len(dd))
+	}
+	if !strings.Contains(dd[0].Message, "dangling reference") {
+		t.Errorf("expected dangling reference error, got: %s", dd[0].Message)
 	}
 }
 

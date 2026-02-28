@@ -1,0 +1,29 @@
+{
+    "attributes": {
+        "description": "Overview dashboard with a dangling reference",
+        "hits": 0,
+        "kibanaSavedObjectMeta": {
+            "searchSourceJSON": {
+                "filter": [],
+                "query": {
+                    "language": "kuery",
+                    "query": ""
+                }
+            }
+        },
+        "panelsJSON": [],
+        "timeRestore": false,
+        "title": "[Test] Overview",
+        "version": 1
+    },
+    "coreMigrationVersion": "8.3.0",
+    "id": "test_invalid_dashboard-overview",
+    "type": "dashboard",
+    "references": [
+        {
+            "id": "nonexistent-tag-0",
+            "name": "nonexistent-tag-0",
+            "type": "tag"
+        }
+    ]
+}
