@@ -289,8 +289,8 @@ func (s *Server) handleDidChangeWorkspaceFolders(msg *jsonrpcMessage) error {
 			clearDiagnosticsForURI(s.writer, uri)
 		}
 		logInfo("workspace/didChangeWorkspaceFolders", map[string]interface{}{
-			"event":      "removed",
-			"count":      len(params.Event.Removed),
+			"event":        "removed",
+			"count":        len(params.Event.Removed),
 			"cleared_uris": len(clearURIs),
 		})
 	}
@@ -329,7 +329,7 @@ func (s *Server) scheduleValidation(uri, filePath string) {
 		select {
 		case <-ctx.Done():
 			logDebug("scheduleValidation", map[string]interface{}{
-				"event":       "publish-skipped-stale",
+				"event":        "publish-skipped-stale",
 				"package_root": pkgRoot,
 				"duration_ms":  time.Since(start).Milliseconds(),
 			})
@@ -339,7 +339,7 @@ func (s *Server) scheduleValidation(uri, filePath string) {
 
 		publishDiagnostics(writer, wm, pkgRoot, diags)
 		logDebug("scheduleValidation", map[string]interface{}{
-			"event":       "validation-complete",
+			"event":        "validation-complete",
 			"package_root": pkgRoot,
 			"duration_ms":  time.Since(start).Milliseconds(),
 		})

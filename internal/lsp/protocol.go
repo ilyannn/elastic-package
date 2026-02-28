@@ -13,11 +13,11 @@ import (
 
 // InitializeParams represents the parameters of an initialize request.
 type InitializeParams struct {
-	ProcessID    *int                `json:"processId"`
-	RootURI      string              `json:"rootUri,omitempty"`
-	RootPath     string              `json:"rootPath,omitempty"`
-	Capabilities ClientCapabilities  `json:"capabilities"`
-	WorkspaceFolders []WorkspaceFolder `json:"workspaceFolders,omitempty"`
+	ProcessID        *int               `json:"processId"`
+	RootURI          string             `json:"rootUri,omitempty"`
+	RootPath         string             `json:"rootPath,omitempty"`
+	Capabilities     ClientCapabilities `json:"capabilities"`
+	WorkspaceFolders []WorkspaceFolder  `json:"workspaceFolders,omitempty"`
 }
 
 // ClientCapabilities describes the client's capabilities.
@@ -37,13 +37,13 @@ type InitializeResult struct {
 
 // ServerCapabilities describes what the server can do.
 type ServerCapabilities struct {
-	TextDocumentSync   *TextDocumentSyncOptions `json:"textDocumentSync,omitempty"`
-	Workspace          *ServerWorkspaceCapabilities `json:"workspace,omitempty"`
+	TextDocumentSync *TextDocumentSyncOptions     `json:"textDocumentSync,omitempty"`
+	Workspace        *ServerWorkspaceCapabilities `json:"workspace,omitempty"`
 }
 
 // TextDocumentSyncOptions describes text document sync capabilities.
 type TextDocumentSyncOptions struct {
-	OpenClose bool `json:"openClose"`
+	OpenClose bool         `json:"openClose"`
 	Save      *SaveOptions `json:"save,omitempty"`
 }
 

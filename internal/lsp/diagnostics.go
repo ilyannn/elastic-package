@@ -133,9 +133,9 @@ func publishDiagnostics(writer *messageWriter, wm *workspaceManager, packageRoot
 		count += len(d)
 	}
 	logInfo("publishDiagnostics", map[string]interface{}{
-		"package_root":     packageRoot,
+		"package_root":      packageRoot,
 		"diagnostics_count": count,
-		"uris_with_errors": len(diags),
+		"uris_with_errors":  len(diags),
 	})
 }
 

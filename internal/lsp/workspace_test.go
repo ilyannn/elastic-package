@@ -112,7 +112,7 @@ func TestWorkspaceManager_RemoveRoots(t *testing.T) {
 
 	// Set previous diagnostics.
 	wm.setPreviousDiagURIs("/repo/pkg", map[string]struct{}{
-		uri1: {},
+		uri1:                     {},
 		"file:///repo/pkg/b.yml": {},
 	})
 

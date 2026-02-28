@@ -7,6 +7,7 @@ package lsp
 import (
 	"bytes"
 	"log"
+	"os"
 	"strings"
 	"testing"
 )
@@ -14,7 +15,7 @@ import (
 func TestLogEvent_StructuredOutput(t *testing.T) {
 	var buf bytes.Buffer
 	log.SetOutput(&buf)
-	defer log.SetOutput(nil)
+	defer log.SetOutput(os.Stderr)
 
 	logEvent("info", map[string]interface{}{
 		"method":   "textDocument/didOpen",
@@ -37,7 +38,7 @@ func TestLogEvent_StructuredOutput(t *testing.T) {
 func TestLogDebug_IncludesMethod(t *testing.T) {
 	var buf bytes.Buffer
 	log.SetOutput(&buf)
-	defer log.SetOutput(nil)
+	defer log.SetOutput(os.Stderr)
 
 	logDebug("test/method", map[string]interface{}{"key": "value"})
 
@@ -53,7 +54,7 @@ func TestLogDebug_IncludesMethod(t *testing.T) {
 func TestLogInfo_NilFields(t *testing.T) {
 	var buf bytes.Buffer
 	log.SetOutput(&buf)
-	defer log.SetOutput(nil)
+	defer log.SetOutput(os.Stderr)
 
 	logInfo("test/method", nil)
 
@@ -66,7 +67,7 @@ func TestLogInfo_NilFields(t *testing.T) {
 func TestLogError_IncludesFields(t *testing.T) {
 	var buf bytes.Buffer
 	log.SetOutput(&buf)
-	defer log.SetOutput(nil)
+	defer log.SetOutput(os.Stderr)
 
 	logError("test/error", map[string]interface{}{
 		"error": "something broke",

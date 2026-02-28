@@ -25,9 +25,9 @@ type jsonrpcMessage struct {
 }
 
 type jsonrpcError struct {
-	Code    int              `json:"code"`
-	Message string           `json:"message"`
-	Data    json.RawMessage  `json:"data,omitempty"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
 }
 
 // JSON-RPC error codes.
