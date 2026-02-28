@@ -209,13 +209,39 @@ Behavior:
 
 ## Feature Matrix (Living Document)
 
-Maintain a method matrix in this file (similar to terraform-ls):
-- `implemented`
-- `experimental`
-- `planned`
-- `not applicable`
+Status key: **impl** = implemented, **exp** = experimental, **plan** = planned, **n/a** = not applicable.
 
-This avoids ambiguous "done" status and supports incremental shipping.
+### Requests
+
+| LSP method | Status | Phase | Note |
+| :--- | :---: | :---: | :--- |
+| `initialize` | plan | 1 | |
+| `shutdown` | plan | 1 | |
+| `textDocument/completion` | plan | 3 | |
+| `completionItem/resolve` | plan | 3 | |
+| `textDocument/hover` | plan | 3 | |
+| `textDocument/documentSymbol` | plan | 3 | |
+| `textDocument/codeAction` | plan | 3 | Quick fixes |
+| `textDocument/definition` | plan | 4 | |
+| `textDocument/references` | plan | 4 | |
+| `textDocument/rename` | plan | 4 | Guarded rollout |
+| `textDocument/formatting` | n/a | — | Use `elastic-package format` externally |
+
+### Notifications
+
+| LSP method | Status | Phase | Note |
+| :--- | :---: | :---: | :--- |
+| `initialized` | plan | 1 | |
+| `exit` | plan | 1 | |
+| `$/cancelRequest` | plan | 1 | Acknowledge, no-op |
+| `textDocument/didOpen` | plan | 1 | Triggers validation |
+| `textDocument/didSave` | plan | 1 | Triggers validation |
+| `textDocument/didClose` | plan | 1 | Clears diagnostics, GC package root |
+| `textDocument/publishDiagnostics` | plan | 1 | Server → client |
+| `textDocument/didChange` | plan | 2 | Full-sync first |
+| `workspace/didChangeWatchedFiles` | plan | 2 | Optional by client |
+
+Update statuses as implementation progresses.
 
 ## Initial Implementation Checklist (Phase 1)
 
