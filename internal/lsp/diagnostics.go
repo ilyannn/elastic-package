@@ -71,16 +71,18 @@ func mapErrorsToDiagnostics(packageRoot string, err error) map[string][]Diagnost
 // two regex patterns documented in the plan.
 func extractFileURI(packageRoot, msg string) string {
 	if m := filePattern.FindStringSubmatch(msg); len(m) > 1 {
-		relPath := m[1]
-		absPath := filepath.Join(packageRoot, filepath.FromSlash(relPath))
-		return pathToURI(absPath)
+		p := filepath.FromSlash(m[1])
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(packageRoot, p)
+		}
+		return pathToURI(p)
 	}
 	if m := folderPattern.FindStringSubmatch(msg); len(m) > 1 {
-		folder := m[1]
-		// Map to the folder's manifest if it exists, otherwise fall back to
-		// the package manifest.
-		candidate := filepath.Join(packageRoot, filepath.FromSlash(folder), packages.PackageManifestFile)
-		return pathToURI(candidate)
+		folder := filepath.FromSlash(m[1])
+		if !filepath.IsAbs(folder) {
+			folder = filepath.Join(packageRoot, folder)
+		}
+		return pathToURI(filepath.Join(folder, packages.PackageManifestFile))
 	}
 	return ""
 }

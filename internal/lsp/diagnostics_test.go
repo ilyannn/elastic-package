@@ -7,6 +7,7 @@ package lsp
 import (
 	"bytes"
 	"errors"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -120,6 +121,124 @@ func TestClearDiagnosticsForURI(t *testing.T) {
 	}
 	if !strings.Contains(output, `"file:///test.yml"`) {
 		t.Error("expected URI in output")
+	}
+}
+
+func testdataDir(t *testing.T) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot determine test file path")
+	}
+	return filepath.Join(filepath.Dir(thisFile), "testdata")
+}
+
+func TestExtractFileURI_AbsolutePath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix paths")
+	}
+
+	// The spec sometimes reports absolute file paths in error messages.
+	msg := `file "/pkg/data_stream/access/manifest.yml" is invalid: some error`
+	got := extractFileURI("/pkg", msg)
+	want := "file:///pkg/data_stream/access/manifest.yml"
+	if got != want {
+		t.Errorf("extractFileURI = %q, want %q", got, want)
+	}
+}
+
+func TestExtractFileURI_AbsoluteFolder(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix paths")
+	}
+
+	// The folder pattern maps to folder/manifest.yml.
+	msg := `folder [/pkg/data_stream] exceeds size limit`
+	got := extractFileURI("/pkg", msg)
+	want := "file:///pkg/data_stream/manifest.yml"
+	if got != want {
+		t.Errorf("extractFileURI = %q, want %q", got, want)
+	}
+}
+
+func TestValidatePackage_ValidFixture(t *testing.T) {
+	pkg := filepath.Join(testdataDir(t), "valid_package")
+	diags := validatePackage(pkg)
+	if len(diags) != 0 {
+		for uri, dd := range diags {
+			for _, d := range dd {
+				t.Errorf("unexpected diagnostic for %s: %s", uri, d.Message)
+			}
+		}
+	}
+}
+
+func TestValidatePackage_InvalidFixture(t *testing.T) {
+	pkg := filepath.Join(testdataDir(t), "invalid_package")
+	diags := validatePackage(pkg)
+	if len(diags) == 0 {
+		t.Fatal("expected diagnostics for invalid package")
+	}
+
+	// All diagnostics should target the manifest URI.
+	manifestURI := pathToURI(filepath.Join(pkg, "manifest.yml"))
+	dd, ok := diags[manifestURI]
+	if !ok {
+		// Print what we got to aid debugging.
+		for uri := range diags {
+			t.Errorf("got diagnostics for %s, wanted %s", uri, manifestURI)
+		}
+		t.FailNow()
+	}
+	if len(dd) == 0 {
+		t.Error("expected at least one diagnostic")
+	}
+	for _, d := range dd {
+		if d.Severity != SeverityError {
+			t.Errorf("expected SeverityError, got %d", d.Severity)
+		}
+		if d.Source != diagnosticSource {
+			t.Errorf("expected source %q, got %q", diagnosticSource, d.Source)
+		}
+	}
+}
+
+func TestValidatePackage_NonexistentPath(t *testing.T) {
+	diags := validatePackage("/nonexistent/path/to/package")
+	// A non-existent path should produce at least one diagnostic (a plain error).
+	if len(diags) == 0 {
+		t.Error("expected diagnostics for non-existent package path")
+	}
+}
+
+func TestFindPackageRoot_FromManifest(t *testing.T) {
+	pkg := filepath.Join(testdataDir(t), "valid_package")
+	manifestPath := filepath.Join(pkg, "manifest.yml")
+	got, err := findPackageRoot(manifestPath)
+	if err != nil {
+		t.Fatalf("findPackageRoot error: %v", err)
+	}
+	if got != pkg {
+		t.Errorf("findPackageRoot = %q, want %q", got, pkg)
+	}
+}
+
+func TestFindPackageRoot_FromDeepFile(t *testing.T) {
+	pkg := filepath.Join(testdataDir(t), "valid_package")
+	deepFile := filepath.Join(pkg, "data_stream", "logs", "fields", "base-fields.yml")
+	got, err := findPackageRoot(deepFile)
+	if err != nil {
+		t.Fatalf("findPackageRoot error: %v", err)
+	}
+	if got != pkg {
+		t.Errorf("findPackageRoot = %q, want %q", got, pkg)
+	}
+}
+
+func TestFindPackageRoot_NotFound(t *testing.T) {
+	_, err := findPackageRoot("/nonexistent/file.yml")
+	if err == nil {
+		t.Error("expected error for non-existent path")
 	}
 }
 
