@@ -416,8 +416,8 @@ Status key:
 
 ### Requests
 
-- `initialize`: plan (Phase 1)
-- `shutdown`: plan (Phase 1)
+- `initialize`: impl (Phase 1)
+- `shutdown`: impl (Phase 1)
 - `textDocument/completion`: plan (Phase 3)
 - `completionItem/resolve`: plan (Phase 3)
 - `textDocument/hover`: plan (Phase 3)
@@ -430,14 +430,14 @@ Status key:
 
 ### Notifications
 
-- `initialized`: plan (Phase 1)
-- `exit`: plan (Phase 1)
-- `$/cancelRequest`: plan (Phase 1, acknowledge no-op)
-- `textDocument/didOpen`: plan (Phase 1, triggers validation)
-- `textDocument/didSave`: plan (Phase 1, triggers validation)
-- `textDocument/didClose`: plan (Phase 1, clears diagnostics and GC package root)
-- `textDocument/publishDiagnostics`: plan (Phase 1, server → client)
-- `workspace/didChangeWorkspaceFolders`: plan (Phase 1, multi-root lifecycle)
+- `initialized`: impl (Phase 1)
+- `exit`: impl (Phase 1)
+- `$/cancelRequest`: impl (Phase 1, acknowledge no-op)
+- `textDocument/didOpen`: impl (Phase 1, triggers validation)
+- `textDocument/didSave`: impl (Phase 1, triggers validation)
+- `textDocument/didClose`: impl (Phase 1, clears diagnostics and GC package root)
+- `textDocument/publishDiagnostics`: impl (Phase 1, server → client)
+- `workspace/didChangeWorkspaceFolders`: impl (Phase 1, multi-root lifecycle)
 - `textDocument/didChange`: plan (Phase 2, full-sync first)
 - `workspace/didChangeWatchedFiles`: plan (Phase 2, optional by client)
 - `workspace/didChangeConfiguration`: plan (Phase 2, live settings updates)

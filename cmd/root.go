@@ -32,6 +32,7 @@ var commands = []*cobraext.Command{
 	setupInstallCommand(),
 	setupLinksCommand(),
 	setupLintCommand(),
+	setupLspCommand(),
 	setupModifyCommand(),
 	setupProfilesCommand(),
 	setupReportsCommand(),
@@ -101,6 +102,9 @@ func processPersistentFlags(cmd *cobra.Command, args []string) error {
 }
 
 func checkVersionUpdate(cmd *cobra.Command, args []string) error {
+	if cmd.Name() == "lsp" {
+		return nil
+	}
 	version.CheckUpdate(cmd.Context())
 	return nil
 }
