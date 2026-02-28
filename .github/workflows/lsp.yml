@@ -64,7 +64,14 @@ jobs:
           go-version-file: go.mod
 
       - name: Run LSP tests
-        run: go test -v -count=1 -race -coverprofile=coverage.out ./internal/lsp/...
+        run: go test -v -count=1 -race -coverprofile=coverage.out ./internal/lsp/... 2>&1 | tee test-output.txt
+
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output-${{ matrix.os }}
+          path: test-output.txt
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest'
