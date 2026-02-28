@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"time"
 )
 
@@ -284,6 +285,11 @@ func (s *Server) handleDidChangeWorkspaceFolders(msg *jsonrpcMessage) error {
 	}
 
 	if len(params.Event.Removed) > 0 {
+		if s.scheduler != nil {
+			for _, f := range params.Event.Removed {
+				s.scheduler.cancelWorkspaceRoot(filepath.Clean(uriToPath(f.URI)))
+			}
+		}
 		clearURIs, _ := s.workspace.removeRoots(params.Event.Removed)
 		for _, uri := range clearURIs {
 			clearDiagnosticsForURI(s.writer, uri)
@@ -301,6 +307,8 @@ func (s *Server) handleDidChangeWorkspaceFolders(msg *jsonrpcMessage) error {
 // scheduleValidation finds the package root for a file and schedules a
 // validation job through the scheduler.
 func (s *Server) scheduleValidation(uri, filePath string) {
+	wsRoot := s.workspace.resolveRoot(filePath)
+
 	pkgRoot, err := findPackageRoot(filePath)
 	if err != nil {
 		logDebug("scheduleValidation", map[string]interface{}{
@@ -311,8 +319,30 @@ func (s *Server) scheduleValidation(uri, filePath string) {
 		return
 	}
 
+	// If the file belongs to a known workspace root, never allow validation
+	// to escape that root boundary.
+	if wsRoot != "" && !pathUnder(pkgRoot, wsRoot) {
+		logWarn("scheduleValidation", map[string]interface{}{
+			"event":          "package-root-outside-workspace-root",
+			"uri":            uri,
+			"workspace_root": wsRoot,
+			"package_root":   pkgRoot,
+		})
+		return
+	}
+
+	// If no workspace root matches, lazily register the discovered package root.
+	if wsRoot == "" {
+		if s.workspace.ensureRoot(pkgRoot) {
+			wsRoot = pkgRoot
+			logInfo("scheduleValidation", map[string]interface{}{
+				"event":          "lazy-root-added",
+				"workspace_root": wsRoot,
+			})
+		}
+	}
+
 	s.workspace.setDocPackageRoot(uri, pkgRoot)
-	wsRoot := s.workspace.resolveRoot(filePath)
 
 	writer := s.writer
 	wm := s.workspace

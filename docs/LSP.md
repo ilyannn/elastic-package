@@ -129,18 +129,18 @@ clean interfaces so we can later adopt parts of **Option C**
 ### Resource budgets and eviction
 
 - Use bounded in-memory state to keep long-running sessions healthy.
-- Default budgets (tunable via config/env in later phases):
-  - Max active workspace roots: 16
-  - Max tracked open docs per root: 500
-  - Soft process memory budget for LSP caches: 256 MiB
-- Eviction policy:
-  - LRU eviction of inactive per-root derived caches (indexes, diagnostics
-    history), never evict currently open document text.
-  - On budget pressure, drop lowest-priority derived caches first, then rebuild
-    lazily on next request.
-- Queue backpressure:
-  - Scheduler queue is bounded; coalesce by key before enqueue.
-  - If queue pressure persists, drop superseded jobs and keep latest-wins jobs.
+- Phase 1 enforced limits:
+  - Max active workspace roots: 16 (new roots beyond the limit are rejected).
+  - Max tracked open docs per root: 500 (`didOpen` tracking is capped per root).
+  - Scheduler queue size: 64 (bounded queue with coalescing and backpressure).
+- Behavior on pressure:
+  - If root/doc limits are reached, the server logs warnings and rejects excess
+    tracked state.
+  - If scheduler queue is full, enqueue attempts are dropped with structured
+    backpressure logs.
+- Phase 2+ planned hardening:
+  - Soft process memory budget for derived caches.
+  - LRU eviction of inactive per-root derived caches.
 
 ### Failure isolation and recovery
 
@@ -148,8 +148,10 @@ clean interfaces so we can later adopt parts of **Option C**
   server process.
 - Recover panics at both protocol-dispatch and scheduler-worker boundaries.
 - Convert recovered panics into structured error logs with request/root context.
-- Use root-scoped retry/backoff for repeatedly failing jobs to avoid hot loops.
+- On workspace-root removal, cancel pending/running jobs tied to that root.
 - Keep serving unaffected roots while one root is degraded.
+- Phase 2+ planned hardening:
+  - Root-scoped retry/backoff for repeatedly failing jobs.
 
 ### Deterministic root precedence
 

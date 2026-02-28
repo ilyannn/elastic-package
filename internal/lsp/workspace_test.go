@@ -186,3 +186,58 @@ func TestPathUnder(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceManager_AddRoots_Limit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix paths")
+	}
+
+	wm := newWorkspaceManager()
+	wm.maxRoots = 1
+
+	wm.addRoots([]WorkspaceFolder{
+		{URI: "file:///repo-a", Name: "a"},
+		{URI: "file:///repo-b", Name: "b"},
+	})
+
+	if len(wm.roots) != 1 {
+		t.Fatalf("expected exactly 1 root, got %d", len(wm.roots))
+	}
+	if got := wm.resolveRoot("/repo-a/file.yml"); got != "/repo-a" {
+		t.Errorf("expected /repo-a to remain as root, got %q", got)
+	}
+	if got := wm.resolveRoot("/repo-b/file.yml"); got != "" {
+		t.Errorf("expected /repo-b to be rejected by root limit, got %q", got)
+	}
+}
+
+func TestWorkspaceManager_OpenDoc_LimitPerRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix paths")
+	}
+
+	wm := newWorkspaceManager()
+	wm.maxOpenDocsPerRoot = 2
+	wm.addRoots([]WorkspaceFolder{{URI: "file:///repo", Name: "repo"}})
+
+	uri1 := "file:///repo/a.yml"
+	uri2 := "file:///repo/b.yml"
+	uri3 := "file:///repo/c.yml"
+
+	wm.openDoc(uri1)
+	wm.openDoc(uri2)
+	wm.openDoc(uri3) // should be dropped from tracking due to limit
+
+	if !wm.isDocOpen(uri1) || !wm.isDocOpen(uri2) {
+		t.Fatal("expected first two docs to be tracked")
+	}
+	if wm.isDocOpen(uri3) {
+		t.Fatal("expected third doc to be rejected by open-doc limit")
+	}
+
+	// setDocPackageRoot must ignore non-tracked docs.
+	wm.setDocPackageRoot(uri3, "/repo")
+	if pr, _ := wm.closeDoc(uri3); pr != "" {
+		t.Fatalf("expected no package root for untracked uri, got %q", pr)
+	}
+}

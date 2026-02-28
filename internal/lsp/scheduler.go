@@ -7,6 +7,7 @@ package lsp
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -22,6 +23,7 @@ type jobFunc func(ctx context.Context)
 type scheduler struct {
 	mu       sync.Mutex
 	pending  map[string]*scheduledJob // key -> job
+	running  map[string]*scheduledJob // key -> currently executing job
 	queue    chan string              // bounded queue of keys
 	maxQueue int
 	version  atomic.Int64
@@ -42,6 +44,7 @@ func newScheduler() *scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &scheduler{
 		pending:  make(map[string]*scheduledJob),
+		running:  make(map[string]*scheduledJob),
 		queue:    make(chan string, defaultMaxQueueSize),
 		maxQueue: defaultMaxQueueSize,
 		ctx:      ctx,
@@ -144,6 +147,15 @@ func (s *scheduler) executeJob(job *scheduledJob) {
 		}
 	}()
 
+	s.mu.Lock()
+	s.running[job.key] = job
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.running, job.key)
+		s.mu.Unlock()
+	}()
+
 	defer job.cancel()
 
 	// Check if job was already cancelled (superseded).
@@ -171,6 +183,40 @@ func (s *scheduler) executeJob(job *scheduledJob) {
 		"key":     job.key,
 		"version": job.version,
 	})
+}
+
+// cancelWorkspaceRoot cancels all pending and running jobs for a workspace root.
+func (s *scheduler) cancelWorkspaceRoot(workspaceRoot string) {
+	if workspaceRoot == "" {
+		return
+	}
+	prefix := workspaceRoot + "\x00"
+
+	var pendingCancelled, runningCancelled int
+	s.mu.Lock()
+	for key, job := range s.pending {
+		if strings.HasPrefix(key, prefix) {
+			job.cancel()
+			delete(s.pending, key)
+			pendingCancelled++
+		}
+	}
+	for key, job := range s.running {
+		if strings.HasPrefix(key, prefix) {
+			job.cancel()
+			runningCancelled++
+		}
+	}
+	s.mu.Unlock()
+
+	if pendingCancelled > 0 || runningCancelled > 0 {
+		logInfo("scheduler", map[string]interface{}{
+			"event":             "workspace-root-cancelled",
+			"workspace_root":    workspaceRoot,
+			"pending_cancelled": pendingCancelled,
+			"running_cancelled": runningCancelled,
+		})
+	}
 }
 
 func (s *scheduler) stop() {

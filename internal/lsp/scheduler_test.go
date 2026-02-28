@@ -169,3 +169,51 @@ func TestScheduler_PanicRecovery(t *testing.T) {
 		t.Fatal("scheduler did not recover from panic")
 	}
 }
+
+func TestScheduler_CancelWorkspaceRoot(t *testing.T) {
+	s := newScheduler()
+	defer s.stop()
+
+	runningCancelled := make(chan struct{})
+	var ranRootA atomic.Int64
+	var ranRootB atomic.Int64
+
+	// Running job in root A waits until cancelled.
+	s.schedule("/rootA", "pkg", "running", func(ctx context.Context) {
+		select {
+		case <-ctx.Done():
+			close(runningCancelled)
+		case <-time.After(2 * time.Second):
+			t.Error("running rootA job was not cancelled in time")
+		}
+	})
+
+	// Let the running job start and occupy the worker.
+	time.Sleep(50 * time.Millisecond)
+
+	// Pending jobs in root A and root B.
+	s.schedule("/rootA", "pkg", "pending", func(ctx context.Context) {
+		ranRootA.Add(1)
+	})
+	s.schedule("/rootB", "pkg", "pending", func(ctx context.Context) {
+		ranRootB.Add(1)
+	})
+
+	s.cancelWorkspaceRoot("/rootA")
+
+	select {
+	case <-runningCancelled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected running rootA job to be cancelled")
+	}
+
+	// Give the worker a chance to execute remaining jobs.
+	time.Sleep(200 * time.Millisecond)
+
+	if ranRootA.Load() != 0 {
+		t.Fatalf("expected rootA pending jobs to be cancelled, got %d runs", ranRootA.Load())
+	}
+	if ranRootB.Load() != 1 {
+		t.Fatalf("expected rootB pending job to run once, got %d", ranRootB.Load())
+	}
+}

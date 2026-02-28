@@ -10,6 +10,11 @@ import (
 	"sync"
 )
 
+const (
+	defaultMaxWorkspaceRoots  = 16
+	defaultMaxOpenDocsPerRoot = 500
+)
+
 // workspaceManager tracks workspace roots, open document URIs, and their
 // associations with package roots. All methods are safe for concurrent use.
 type workspaceManager struct {
@@ -27,14 +32,20 @@ type workspaceManager struct {
 	// previousDiagURIs maps package root -> set of URIs that had diagnostics
 	// in the previous publish cycle. Used to clear stale diagnostics.
 	previousDiagURIs map[string]map[string]struct{}
+
+	// Limits to prevent unbounded growth in long-running sessions.
+	maxRoots           int
+	maxOpenDocsPerRoot int
 }
 
 func newWorkspaceManager() *workspaceManager {
 	return &workspaceManager{
-		roots:            make(map[string]struct{}),
-		openDocs:         make(map[string]string),
-		docPackageRoot:   make(map[string]string),
-		previousDiagURIs: make(map[string]map[string]struct{}),
+		roots:              make(map[string]struct{}),
+		openDocs:           make(map[string]string),
+		docPackageRoot:     make(map[string]string),
+		previousDiagURIs:   make(map[string]map[string]struct{}),
+		maxRoots:           defaultMaxWorkspaceRoots,
+		maxOpenDocsPerRoot: defaultMaxOpenDocsPerRoot,
 	}
 }
 
@@ -44,8 +55,37 @@ func (wm *workspaceManager) addRoots(folders []WorkspaceFolder) {
 	defer wm.mu.Unlock()
 	for _, f := range folders {
 		path := uriToPath(f.URI)
-		wm.roots[filepath.Clean(path)] = struct{}{}
+		root := filepath.Clean(path)
+		if _, exists := wm.roots[root]; !exists && len(wm.roots) >= wm.maxRoots {
+			logWarn("workspace", map[string]interface{}{
+				"event": "root-limit-reached",
+				"root":  root,
+				"limit": wm.maxRoots,
+			})
+			continue
+		}
+		wm.roots[root] = struct{}{}
 	}
+}
+
+// ensureRoot lazily registers a single root if limits allow it.
+func (wm *workspaceManager) ensureRoot(root string) bool {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
+	root = filepath.Clean(root)
+	if _, exists := wm.roots[root]; exists {
+		return true
+	}
+	if len(wm.roots) >= wm.maxRoots {
+		logWarn("workspace", map[string]interface{}{
+			"event": "root-limit-reached",
+			"root":  root,
+			"limit": wm.maxRoots,
+		})
+		return false
+	}
+	wm.roots[root] = struct{}{}
+	return true
 }
 
 // removeRoots unregisters workspace folders and returns URIs whose diagnostics
@@ -95,6 +135,28 @@ func (wm *workspaceManager) openDoc(uri string) string {
 	path := uriToPath(uri)
 	wm.mu.Lock()
 	defer wm.mu.Unlock()
+
+	// If this is a new URI under a known root, enforce the per-root open-doc cap.
+	if _, alreadyOpen := wm.openDocs[uri]; !alreadyOpen {
+		if root := wm.resolveRootLocked(path); root != "" {
+			openUnderRoot := 0
+			for _, p := range wm.openDocs {
+				if pathUnder(p, root) {
+					openUnderRoot++
+				}
+			}
+			if openUnderRoot >= wm.maxOpenDocsPerRoot {
+				logWarn("workspace", map[string]interface{}{
+					"event": "open-doc-limit-reached",
+					"uri":   uri,
+					"root":  root,
+					"limit": wm.maxOpenDocsPerRoot,
+				})
+				return path
+			}
+		}
+	}
+
 	wm.openDocs[uri] = path
 	return path
 }
@@ -125,6 +187,10 @@ func (wm *workspaceManager) closeDoc(uri string) (packageRoot string, hasOtherDo
 func (wm *workspaceManager) setDocPackageRoot(uri, packageRoot string) {
 	wm.mu.Lock()
 	defer wm.mu.Unlock()
+	if _, ok := wm.openDocs[uri]; !ok {
+		// Do not accumulate package-root associations for untracked docs.
+		return
+	}
 	wm.docPackageRoot[uri] = packageRoot
 }
 
@@ -165,7 +231,10 @@ func (wm *workspaceManager) isDocOpen(uri string) bool {
 func (wm *workspaceManager) resolveRoot(path string) string {
 	wm.mu.Lock()
 	defer wm.mu.Unlock()
+	return wm.resolveRootLocked(path)
+}
 
+func (wm *workspaceManager) resolveRootLocked(path string) string {
 	cleanPath := filepath.Clean(path)
 	best := ""
 	for r := range wm.roots {
