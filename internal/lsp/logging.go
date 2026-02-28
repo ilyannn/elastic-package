@@ -7,8 +7,13 @@ package lsp
 import (
 	"fmt"
 	"log"
+	"os"
 	"time"
 )
+
+// logger is a package-level logger so tests can redirect output without
+// racing with the global default logger used by other goroutines.
+var logger = log.New(os.Stderr, "", log.LstdFlags)
 
 // logEvent writes a structured debug log entry to stderr.
 // All fields are emitted as key=value pairs for easy parsing.
@@ -18,7 +23,7 @@ func logEvent(level string, fields map[string]interface{}) {
 	for k, v := range fields {
 		msg += fmt.Sprintf(" %s=%v", k, v)
 	}
-	log.Println(msg)
+	logger.Println(msg)
 }
 
 func logDebug(method string, fields map[string]interface{}) {

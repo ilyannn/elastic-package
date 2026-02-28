@@ -7,15 +7,23 @@ package lsp
 import (
 	"bytes"
 	"log"
-	"os"
 	"strings"
 	"testing"
 )
 
+// redirectLogger points the package-level logger at buf for the duration
+// of the test, then restores it. This avoids racing with scheduler
+// goroutines that also call the package logger.
+func redirectLogger(t *testing.T, buf *bytes.Buffer) {
+	t.Helper()
+	old := logger
+	logger = log.New(buf, "", log.LstdFlags)
+	t.Cleanup(func() { logger = old })
+}
+
 func TestLogEvent_StructuredOutput(t *testing.T) {
 	var buf bytes.Buffer
-	log.SetOutput(&buf)
-	defer log.SetOutput(os.Stderr)
+	redirectLogger(t, &buf)
 
 	logEvent("info", map[string]interface{}{
 		"method":   "textDocument/didOpen",
@@ -37,8 +45,7 @@ func TestLogEvent_StructuredOutput(t *testing.T) {
 
 func TestLogDebug_IncludesMethod(t *testing.T) {
 	var buf bytes.Buffer
-	log.SetOutput(&buf)
-	defer log.SetOutput(os.Stderr)
+	redirectLogger(t, &buf)
 
 	logDebug("test/method", map[string]interface{}{"key": "value"})
 
@@ -53,8 +60,7 @@ func TestLogDebug_IncludesMethod(t *testing.T) {
 
 func TestLogInfo_NilFields(t *testing.T) {
 	var buf bytes.Buffer
-	log.SetOutput(&buf)
-	defer log.SetOutput(os.Stderr)
+	redirectLogger(t, &buf)
 
 	logInfo("test/method", nil)
 
@@ -66,8 +72,7 @@ func TestLogInfo_NilFields(t *testing.T) {
 
 func TestLogError_IncludesFields(t *testing.T) {
 	var buf bytes.Buffer
-	log.SetOutput(&buf)
-	defer log.SetOutput(os.Stderr)
+	redirectLogger(t, &buf)
 
 	logError("test/error", map[string]interface{}{
 		"error": "something broke",
