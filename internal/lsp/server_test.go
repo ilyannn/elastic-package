@@ -224,6 +224,99 @@ func TestServer_InitializeWithWorkspaceFolders(t *testing.T) {
 	}
 }
 
+func TestServer_DidOpenAndClose(t *testing.T) {
+	messages := []string{
+		sendRequest(1, "initialize", InitializeParams{
+			RootURI: "file:///workspace",
+		}),
+		sendNotificationBody("initialized", struct{}{}),
+		sendNotificationBody("textDocument/didOpen", DidOpenTextDocumentParams{
+			TextDocument: TextDocumentItem{
+				URI:        "file:///workspace/manifest.yml",
+				LanguageID: "yaml",
+				Version:    1,
+				Text:       "name: test",
+			},
+		}),
+		sendNotificationBody("textDocument/didClose", DidCloseTextDocumentParams{
+			TextDocument: TextDocumentIdentifier{
+				URI: "file:///workspace/manifest.yml",
+			},
+		}),
+		sendRequest(2, "shutdown", nil),
+		sendNotificationBody("exit", nil),
+	}
+
+	output := runTranscript(t, messages)
+
+	// didClose should publish empty diagnostics for the closed file.
+	if !strings.Contains(output, `"diagnostics":[]`) {
+		t.Error("expected empty diagnostics on didClose")
+	}
+	if !strings.Contains(output, `file:///workspace/manifest.yml`) {
+		t.Error("expected URI in diagnostics notification")
+	}
+}
+
+func TestServer_DidSave(t *testing.T) {
+	messages := []string{
+		sendRequest(1, "initialize", InitializeParams{
+			RootURI: "file:///workspace",
+		}),
+		sendNotificationBody("initialized", struct{}{}),
+		sendNotificationBody("textDocument/didSave", DidSaveTextDocumentParams{
+			TextDocument: TextDocumentIdentifier{
+				URI: "file:///workspace/manifest.yml",
+			},
+		}),
+		sendRequest(2, "shutdown", nil),
+		sendNotificationBody("exit", nil),
+	}
+
+	// Should not panic or error. scheduleValidation will fail to find
+	// the package root for the fake path and log a debug message.
+	output := runTranscript(t, messages)
+	if !strings.Contains(output, `"id":2`) {
+		t.Error("expected shutdown response")
+	}
+}
+
+func TestServer_DidChangeWorkspaceFolders(t *testing.T) {
+	messages := []string{
+		sendRequest(1, "initialize", InitializeParams{
+			RootURI: "file:///workspace",
+			Capabilities: ClientCapabilities{
+				Workspace: WorkspaceClientCapabilities{
+					WorkspaceFolders: true,
+				},
+			},
+		}),
+		sendNotificationBody("initialized", struct{}{}),
+		sendNotificationBody("workspace/didChangeWorkspaceFolders", DidChangeWorkspaceFoldersParams{
+			Event: WorkspaceFoldersChangeEvent{
+				Added: []WorkspaceFolder{
+					{URI: "file:///workspace/new-root", Name: "new-root"},
+				},
+			},
+		}),
+		sendNotificationBody("workspace/didChangeWorkspaceFolders", DidChangeWorkspaceFoldersParams{
+			Event: WorkspaceFoldersChangeEvent{
+				Removed: []WorkspaceFolder{
+					{URI: "file:///workspace", Name: "root"},
+				},
+			},
+		}),
+		sendRequest(2, "shutdown", nil),
+		sendNotificationBody("exit", nil),
+	}
+
+	// Should not panic or error.
+	output := runTranscript(t, messages)
+	if !strings.Contains(output, `"id":2`) {
+		t.Error("expected shutdown response")
+	}
+}
+
 func TestServer_DoubleInitialize(t *testing.T) {
 	messages := []string{
 		sendRequest(1, "initialize", InitializeParams{

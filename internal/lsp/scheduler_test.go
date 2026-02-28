@@ -6,6 +6,7 @@ package lsp
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -121,6 +122,28 @@ func TestScheduler_ConcurrentSchedule(t *testing.T) {
 	if got == 0 {
 		t.Error("expected some jobs to execute")
 	}
+}
+
+func TestScheduler_Backpressure(t *testing.T) {
+	s := newScheduler()
+	defer s.stop()
+
+	// Block the worker so the queue fills up.
+	blocker := make(chan struct{})
+	s.schedule("ws", "pkg", "blocker", func(ctx context.Context) {
+		<-blocker
+	})
+
+	// Fill the queue beyond capacity. Each needs a unique key to avoid
+	// coalescing (which replaces in-place without enqueuing).
+	for i := 0; i < defaultMaxQueueSize+10; i++ {
+		s.schedule("ws", "pkg", fmt.Sprintf("key-%d", i), func(ctx context.Context) {})
+	}
+
+	// Unblock and let everything drain.
+	close(blocker)
+
+	// Should complete without deadlocking or panicking.
 }
 
 func TestScheduler_PanicRecovery(t *testing.T) {

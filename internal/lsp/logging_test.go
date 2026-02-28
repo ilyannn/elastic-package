@@ -70,6 +70,21 @@ func TestLogInfo_NilFields(t *testing.T) {
 	}
 }
 
+func TestLogWarn_IncludesMethod(t *testing.T) {
+	var buf bytes.Buffer
+	redirectLogger(t, &buf)
+
+	logWarn("test/warn", map[string]interface{}{"detail": "slow"})
+
+	output := buf.String()
+	if !strings.Contains(output, "level=warn") {
+		t.Error("expected level=warn")
+	}
+	if !strings.Contains(output, "method=test/warn") {
+		t.Error("expected method field")
+	}
+}
+
 func TestLogError_IncludesFields(t *testing.T) {
 	var buf bytes.Buffer
 	redirectLogger(t, &buf)
