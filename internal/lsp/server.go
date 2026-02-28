@@ -61,9 +61,7 @@ func (s *Server) Run() error {
 
 var errExit = fmt.Errorf("exit")
 
-func (s *Server) dispatch(msg *jsonrpcMessage) (retErr error) {
-	start := time.Now()
-
+func (s *Server) dispatch(msg *jsonrpcMessage) error {
 	// Panic recovery at dispatch boundary.
 	defer func() {
 		if r := recover(); r != nil {
@@ -125,9 +123,8 @@ func (s *Server) dispatch(msg *jsonrpcMessage) (retErr error) {
 		return s.handleDidChangeWorkspaceFolders(msg)
 	default:
 		logDebug("dispatch", map[string]interface{}{
-			"event":      "unknown-method",
-			"method":     method,
-			"duration_ms": time.Since(start).Milliseconds(),
+			"event":  "unknown-method",
+			"method": method,
 		})
 		if isRequest {
 			return s.writer.sendErrorResponse(msg.ID, codeMethodNotFound, "method not found: "+method)

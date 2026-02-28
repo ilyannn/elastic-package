@@ -7,7 +7,6 @@ package lsp
 import (
 	"path/filepath"
 	"regexp"
-	"strings"
 
 	"github.com/elastic/elastic-package/internal/packages"
 	"github.com/elastic/elastic-package/internal/validation"
@@ -158,18 +157,4 @@ func clearDiagnosticsForURI(writer *messageWriter, uri string) {
 func findPackageRoot(filePath string) (string, error) {
 	dir := filepath.Dir(filePath)
 	return packages.FindPackageRootFrom(dir)
-}
-
-// splitValidationErrors splits an error string by newlines for individual
-// error messages. This is used as a fallback when the error is not a
-// ValidationErrors type.
-func splitValidationErrors(errMsg string) []string {
-	var msgs []string
-	for _, line := range strings.Split(errMsg, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			msgs = append(msgs, line)
-		}
-	}
-	return msgs
 }

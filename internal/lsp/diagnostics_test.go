@@ -73,14 +73,6 @@ func TestMapErrorsToDiagnostics_PlainError(t *testing.T) {
 	}
 }
 
-func TestSplitValidationErrors(t *testing.T) {
-	input := "error one\nerror two\n\nerror three\n"
-	got := splitValidationErrors(input)
-	if len(got) != 3 {
-		t.Errorf("expected 3 errors, got %d", len(got))
-	}
-}
-
 func TestPublishDiagnostics_ClearsStale(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("unix paths")

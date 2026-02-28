@@ -5,47 +5,12 @@
 package lsp
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"testing"
 )
-
-// testConn provides a helper for driving an LSP server via in-memory pipes.
-type testConn struct {
-	t      *testing.T
-	in     io.Writer
-	out    *bufio.Reader
-	server *Server
-}
-
-func newTestConn(t *testing.T) *testConn {
-	t.Helper()
-	pr, pw := io.Pipe()
-	var outBuf bytes.Buffer
-
-	srv := NewServer(pr, &outBuf)
-
-	tc := &testConn{
-		t:      t,
-		in:     pw,
-		out:    bufio.NewReader(&outBuf),
-		server: srv,
-	}
-	return tc
-}
-
-// sendRaw writes a framed JSON-RPC message.
-func (tc *testConn) sendRaw(body string) {
-	tc.t.Helper()
-	frame := fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(body), body)
-	if _, err := io.WriteString(tc.in, frame); err != nil {
-		tc.t.Fatalf("write error: %v", err)
-	}
-}
 
 // sendRequest sends a JSON-RPC request and returns the framed bytes.
 func sendRequest(id int, method string, params interface{}) string {
