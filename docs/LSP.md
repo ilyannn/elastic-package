@@ -90,11 +90,72 @@ Start with **Option A** for protocol transport and server lifecycle, but design
 clean interfaces so we can later adopt parts of **Option C**
 (schema/semantic enrichment) without rewriting the server loop.
 
+## Core Architecture Pattern (Industry-aligned)
+
+- `ProtocolLoop`: JSON-RPC read/write, request/notification dispatch,
+  capability negotiation.
+- `Scheduler`: job queue with latest-wins coalescing per workspace root and URI.
+  Cancel stale jobs before they publish.
+- `AnalysisStore`: in-memory state per workspace root (open docs, package-root
+  map, derived indexes and caches).
+- `DiagnosticsPublisher`: versioned publish pipeline that sends only newest
+  diagnostics per URI and clears stale diagnostics.
+- `WorkspaceManager`: multi-root lifecycle owner
+  (`initialize.workspaceFolders`, `workspace/didChangeWorkspaceFolders`) with
+  root-level state garbage collection.
+- Keep interfaces explicit so validation backend and protocol transport can
+  evolve independently.
+
 ## Non-Goals (Phase 1)
 
 - Full semantic rename/refactor across packages.
 - Advanced workspace-wide symbol indexing.
 - Notebook APIs and uncommon LSP extensions.
+
+## Workspace Model (Multi-root First-class)
+
+- Multi-root is supported by default when the client advertises
+  `workspaceFolders`.
+- Keep state compartmentalized by workspace root to avoid cross-root pollution.
+- If an opened URI is outside known roots but resolves to a package, create
+  lazy state for that root.
+- On workspace-folder removal: cancel jobs for that root, clear diagnostics for
+  all tracked URIs in that root, then drop caches.
+- If client does not support `workspaceFolders`, fall back to single-root mode
+  from `initialize.rootUri` or `rootPath`.
+
+## Operational Guarantees
+
+### Resource budgets and eviction
+
+- Use bounded in-memory state to keep long-running sessions healthy.
+- Default budgets (tunable via config/env in later phases):
+  - Max active workspace roots: 16
+  - Max tracked open docs per root: 500
+  - Soft process memory budget for LSP caches: 256 MiB
+- Eviction policy:
+  - LRU eviction of inactive per-root derived caches (indexes, diagnostics
+    history), never evict currently open document text.
+  - On budget pressure, drop lowest-priority derived caches first, then rebuild
+    lazily on next request.
+- Queue backpressure:
+  - Scheduler queue is bounded; coalesce by key before enqueue.
+  - If queue pressure persists, drop superseded jobs and keep latest-wins jobs.
+
+### Failure isolation and recovery
+
+- Never let a single request, workspace root, or validator panic crash the
+  server process.
+- Recover panics at both protocol-dispatch and scheduler-worker boundaries.
+- Convert recovered panics into structured error logs with request/root context.
+- Use root-scoped retry/backoff for repeatedly failing jobs to avoid hot loops.
+- Keep serving unaffected roots while one root is degraded.
+
+### Deterministic root precedence
+
+- When workspace roots overlap (for example `/repo` and `/repo/sub`), resolve
+  URIs by longest-prefix root match.
+- Package-root discovery must stay constrained within the chosen workspace root.
 
 ## LSP Capability Roadmap
 
@@ -107,6 +168,7 @@ Methods:
   aggressive clients)
 - `textDocument/didOpen`, `textDocument/didSave`, `textDocument/didClose`
 - `textDocument/publishDiagnostics`
+- `workspace/didChangeWorkspaceFolders` (when client supports multi-root)
 
 Behavior:
 
@@ -133,6 +195,8 @@ Behavior:
   tracking that root.
 - Multi-package workspace: track open-file-to-package-root associations.
   Validating one package never affects diagnostics for another.
+- Root resolution order: URI -> workspace folder (if available) -> package root
+  discovery. Never publish diagnostics across workspace-root boundaries.
 
 ### Phase 2: Live Editing Correctness
 
@@ -140,12 +204,15 @@ Methods:
 
 - `textDocument/didChange` (full-sync first)
 - `workspace/didChangeWatchedFiles` (optional by client support)
+- `workspace/didChangeConfiguration`
 
 Behavior:
 
 - Maintain in-memory document store for open files.
 - Debounced diagnostics on change (for example 300-800ms).
 - Fallback to save-triggered validation when in-memory validation is unavailable.
+- Apply workspace setting updates without restart (for example diagnostics
+  debounce, feature gates, and log verbosity).
 
 ### Phase 3: Authoring Intelligence
 
@@ -185,6 +252,24 @@ Behavior:
 - No stdout contamination from non-LSP output.
 - Server remains healthy across multi-hour editor sessions.
 
+## Observability and Debug Logging
+
+- Emit debug logs to stderr for the initial rollout (we will need them to
+  harden behavior across editors and repos).
+- Use structured log fields at minimum: timestamp, level, method, request ID,
+  URI, workspace root, package root, duration_ms, diagnostics_count,
+  cancelled/coalesced flags.
+- Log scheduler transitions: queued, coalesced, cancelled, started, finished,
+  publish-skipped-stale.
+- Log budget pressure and eviction events (cache-evicted, queue-backpressure,
+  dropped-superseded).
+- Log panic recovery events with component and root context.
+- Never log full document contents; redact sensitive values when logging paths
+  or settings payloads.
+- Support log-level control via env/config (for example
+  `ELASTIC_PACKAGE_LSP_LOG_LEVEL=debug|info|warn|error`) once
+  `workspace/didChangeConfiguration` lands.
+
 ## Integration Safety Requirements
 
 - `lsp` command must bypass update checks and any startup side effects that can
@@ -193,11 +278,11 @@ Behavior:
   invoked command is `lsp` (rather than overriding `PersistentPreRunE` in
   `cmd/lsp.go`), so `lsp` still inherits other root pre-run behavior
   consistently.
-- All logs must go to stderr only. The `logger` package uses Go's `log.Print`,
-  which defaults to `os.Stderr`, but this is implicit. The `lsp` command action
-  must explicitly call `log.SetOutput(os.Stderr)` before starting the server as
-  a safety guard against any future code or dependency that redirects the
-  default logger.
+- All logs (including debug logs) must go to stderr only. The `logger` package
+  uses Go's `log.Print`, which defaults to `os.Stderr`, but this is implicit.
+  The `lsp` command action must explicitly call `log.SetOutput(os.Stderr)`
+  before starting the server as a safety guard against any future code or
+  dependency that redirects the default logger.
 - Capabilities must match implemented methods exactly (no false advertising).
 
 ## Internal Package Layout
@@ -221,6 +306,9 @@ Behavior:
   flags).
 - Capability negotiation (advertise only implemented methods).
 - `$/cancelRequest` handler (acknowledge, no-op).
+- Route validation jobs through scheduler (do not validate inline in transport
+  handlers).
+- Panic recovery at dispatch boundary; failed requests are logged and isolated.
 - Graceful shutdown behavior.
 
 #### `internal/lsp/diagnostics.go`
@@ -233,9 +321,24 @@ Behavior:
 - Stale diagnostics tracking: set of previously-published URIs per package
   root; send empty `[]` for URIs that no longer have errors.
 
+#### `internal/lsp/scheduler.go`
+
+- Latest-wins coalescing queue keyed by `(workspaceRoot, packageRoot, uri)`.
+- Cancellation tokens for superseded jobs.
+- Publish guard that drops stale job results by version.
+- Bounded queue with backpressure and coalescing-before-enqueue.
+- Panic recovery in worker execution path and root-scoped retry/backoff.
+
+#### `internal/lsp/logging.go`
+
+- Structured debug log helpers used across protocol loop, scheduler, and
+  diagnostics.
+- Stable log schema for test assertions and incident debugging.
+
 #### `internal/lsp/workspace.go` (thin in Phase 1)
 
-- Open-file set and URI → package-root associations.
+- Workspace-root registry and URI → package-root associations.
+- Handles `workspace/didChangeWorkspaceFolders` add/remove events.
 - On `didClose`: remove URI, clear diagnostics, garbage-collect package roots
   with no remaining open files.
 
@@ -255,6 +358,11 @@ Behavior:
 
 - In-memory document store for `didChange` buffers.
 - Debounce scheduler for change-triggered validation.
+- Per-root configuration snapshots from `workspace/didChangeConfiguration`.
+
+#### `internal/lsp/logging.go` (grows)
+
+- Dynamic log-level updates from config/env without process restart.
 
 #### `internal/lsp/completion.go` (Phase 3)
 
@@ -272,18 +380,30 @@ Behavior:
 - URI/path normalization across OS path styles.
 - Lifecycle (`initialize` -> requests -> `shutdown` -> `exit`).
 - Unknown method handling (`method not found`).
+- Scheduler behavior: coalescing, cancellation, and stale publish suppression.
+- Scheduler backpressure and bounded-queue behavior under bursty input.
+- Cache eviction policy (LRU of inactive derived caches) under budget pressure.
+- Panic recovery at dispatch and worker boundaries.
 - Diagnostics mapping, stale clear behavior, and package-root-not-found handling.
+- Log schema snapshots for key events (open/save/publish/cancel).
 
 ### Integration tests
 
 - Start server over stdio and replay real framed LSP transcripts.
 - Edit/save scenarios in fixtures under `test/packages/...`.
 - Multiple open files from same package and from different packages.
+- Multi-root scenarios: workspace-folder add/remove, per-root cache isolation,
+  and diagnostics clearing on root removal.
+- Overlapping-root scenario (`/repo` + `/repo/sub`) validates longest-prefix
+  root resolution.
+- Degraded-root scenario validates unaffected roots continue to serve requests.
 
 ### Compatibility tests
 
 - Capability assertions against client expectations.
 - Regression fixtures for package-spec error message variants.
+- Workspace capability checks (`workspaceFolders` support and
+  `workspace/didChangeConfiguration` behavior).
 
 ## Feature Matrix (Living Document)
 
@@ -317,19 +437,25 @@ Status key:
 - `textDocument/didSave`: plan (Phase 1, triggers validation)
 - `textDocument/didClose`: plan (Phase 1, clears diagnostics and GC package root)
 - `textDocument/publishDiagnostics`: plan (Phase 1, server → client)
+- `workspace/didChangeWorkspaceFolders`: plan (Phase 1, multi-root lifecycle)
 - `textDocument/didChange`: plan (Phase 2, full-sync first)
 - `workspace/didChangeWatchedFiles`: plan (Phase 2, optional by client)
+- `workspace/didChangeConfiguration`: plan (Phase 2, live settings updates)
 
 Update statuses as implementation progresses.
 
 ## Initial Implementation Checklist (Phase 1)
 
 1. Add `cmd/lsp.go` and root command wiring.
-2. Build `internal/lsp/jsonrpc.go`, `protocol.go`, `server.go`, `diagnostics.go`.
-3. Implement phase-1 methods and capability response.
-4. Add strict stdout/stderr safety guards.
-5. Add unit tests + transcript-based integration tests.
-6. Validate in VS Code and at least one additional LSP client.
+2. Build `internal/lsp/jsonrpc.go`, `protocol.go`, `server.go`,
+   `workspace.go`, `scheduler.go`, `diagnostics.go`, and `logging.go`.
+3. Implement phase-1 methods and capability response, including
+   `workspace/didChangeWorkspaceFolders`.
+4. Add strict stdout/stderr safety guards and structured debug logs.
+5. Add unit tests + transcript-based integration tests, including multi-root
+   and scheduler cancellation cases.
+6. Implement bounded queue, cache-budget eviction, and panic-recovery guards.
+7. Validate in VS Code and at least one additional LSP client.
 
 ## Verification
 
@@ -338,3 +464,11 @@ Update statuses as implementation progresses.
 3. Replay framed initialize/shutdown transcript against `elastic-package lsp`.
 4. Manual IDE smoke test with a broken fixture package; confirm diagnostics
    publish and clear.
+5. Multi-root smoke test: open files from two workspace folders, validate
+   isolation, then remove one folder and verify diagnostics clear for that root.
+6. Debug-log smoke test: confirm structured stderr logs include method, request
+   ID, root context, duration, and cancellation/coalescing markers.
+7. Budget-pressure smoke test: generate bursty changes and confirm queue
+   backpressure + superseded-job dropping behave as expected.
+8. Failure-isolation smoke test: inject a failing validator path and confirm
+   other workspace roots continue serving requests.
