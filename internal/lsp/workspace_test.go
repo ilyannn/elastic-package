@@ -164,6 +164,10 @@ func TestWorkspaceManager_PreviousDiagURIs(t *testing.T) {
 }
 
 func TestPathUnder(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix paths")
+	}
+
 	tests := []struct {
 		child  string
 		parent string

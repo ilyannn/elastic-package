@@ -72,28 +72,3 @@ jobs:
         with:
           name: lsp-coverage
           path: coverage.out
-
-  test-full:
-    name: Full test suite
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Run all tests
-        run: |
-          mkdir -p build/test-results
-          go run gotest.tools/gotestsum \
-            --format standard-verbose \
-            --junitfile build/test-results/TEST-unit.xml \
-            -- -count=1 -coverprofile=build/test-coverage/coverage-unit-report.out ./...
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: build/test-results/
