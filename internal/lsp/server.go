@@ -115,6 +115,8 @@ func (s *Server) dispatch(msg *jsonrpcMessage) error {
 		return nil
 	case "textDocument/didOpen":
 		return s.handleDidOpen(msg)
+	case "textDocument/didChange":
+		return s.handleDidChange(msg)
 	case "textDocument/didSave":
 		return s.handleDidSave(msg)
 	case "textDocument/didClose":
@@ -162,6 +164,7 @@ func (s *Server) handleInitialize(msg *jsonrpcMessage) error {
 		Capabilities: ServerCapabilities{
 			TextDocumentSync: &TextDocumentSyncOptions{
 				OpenClose: true,
+				Change:    SyncFull,
 				Save:      &SaveOptions{IncludeText: false},
 			},
 		},
@@ -221,6 +224,26 @@ func (s *Server) handleDidOpen(msg *jsonrpcMessage) error {
 	logDebug("textDocument/didOpen", map[string]interface{}{
 		"uri":  uri,
 		"path": filePath,
+	})
+
+	s.scheduleValidation(uri, filePath)
+	return nil
+}
+
+func (s *Server) handleDidChange(msg *jsonrpcMessage) error {
+	var params DidChangeTextDocumentParams
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		logError("textDocument/didChange", map[string]interface{}{"error": err.Error()})
+		return nil
+	}
+
+	uri := params.TextDocument.URI
+	filePath := uriToPath(uri)
+
+	logDebug("textDocument/didChange", map[string]interface{}{
+		"uri":     uri,
+		"path":    filePath,
+		"version": params.TextDocument.Version,
 	})
 
 	s.scheduleValidation(uri, filePath)

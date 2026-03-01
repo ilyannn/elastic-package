@@ -317,6 +317,51 @@ func TestServer_DidChangeWorkspaceFolders(t *testing.T) {
 	}
 }
 
+func TestServer_DidChange(t *testing.T) {
+	messages := []string{
+		sendRequest(1, "initialize", InitializeParams{
+			RootURI: "file:///workspace",
+		}),
+		sendNotificationBody("initialized", struct{}{}),
+		sendNotificationBody("textDocument/didChange", DidChangeTextDocumentParams{
+			TextDocument: VersionedTextDocumentIdentifier{
+				URI:     "file:///workspace/manifest.yml",
+				Version: 2,
+			},
+			ContentChanges: []TextDocumentContentChangeEvent{
+				{Text: "name: test\nversion: 0.0.1"},
+			},
+		}),
+		sendRequest(2, "shutdown", nil),
+		sendNotificationBody("exit", nil),
+	}
+
+	// Should not panic or error. scheduleValidation will fail to find
+	// the package root for the fake path and log a debug message.
+	output := runTranscript(t, messages)
+	if !strings.Contains(output, `"id":2`) {
+		t.Error("expected shutdown response")
+	}
+}
+
+func TestServer_InitializeAdvertisesChangeSync(t *testing.T) {
+	messages := []string{
+		sendRequest(1, "initialize", InitializeParams{
+			RootURI: "file:///workspace",
+		}),
+		sendNotificationBody("initialized", struct{}{}),
+		sendRequest(2, "shutdown", nil),
+		sendNotificationBody("exit", nil),
+	}
+
+	output := runTranscript(t, messages)
+
+	// The initialize response should advertise change sync (full).
+	if !strings.Contains(output, `"change":1`) {
+		t.Error("expected change:1 (full sync) in capabilities")
+	}
+}
+
 func TestServer_DoubleInitialize(t *testing.T) {
 	messages := []string{
 		sendRequest(1, "initialize", InitializeParams{

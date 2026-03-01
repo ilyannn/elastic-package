@@ -438,7 +438,7 @@ Status key:
 - `textDocument/didClose`: impl (Phase 1, clears diagnostics and GC package root)
 - `textDocument/publishDiagnostics`: impl (Phase 1, server → client)
 - `workspace/didChangeWorkspaceFolders`: impl (Phase 1, multi-root lifecycle)
-- `textDocument/didChange`: plan (Phase 2, full-sync first)
+- `textDocument/didChange`: impl (Phase 2, full-sync, triggers validation)
 - `workspace/didChangeWatchedFiles`: plan (Phase 2, optional by client)
 - `workspace/didChangeConfiguration`: plan (Phase 2, live settings updates)
 

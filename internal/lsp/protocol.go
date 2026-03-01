@@ -44,8 +44,16 @@ type ServerCapabilities struct {
 // TextDocumentSyncOptions describes text document sync capabilities.
 type TextDocumentSyncOptions struct {
 	OpenClose bool         `json:"openClose"`
+	Change    int          `json:"change,omitempty"`
 	Save      *SaveOptions `json:"save,omitempty"`
 }
+
+// TextDocumentSyncKind constants.
+const (
+	SyncNone        = 0
+	SyncFull        = 1
+	SyncIncremental = 2
+)
 
 // SaveOptions describes save notification options.
 type SaveOptions struct {
@@ -72,6 +80,24 @@ type WorkspaceFolder struct {
 // DidOpenTextDocumentParams is sent when a document is opened.
 type DidOpenTextDocumentParams struct {
 	TextDocument TextDocumentItem `json:"textDocument"`
+}
+
+// DidChangeTextDocumentParams is sent when a document's content changes.
+type DidChangeTextDocumentParams struct {
+	TextDocument   VersionedTextDocumentIdentifier  `json:"textDocument"`
+	ContentChanges []TextDocumentContentChangeEvent `json:"contentChanges"`
+}
+
+// VersionedTextDocumentIdentifier identifies a specific version of a text document.
+type VersionedTextDocumentIdentifier struct {
+	URI     string `json:"uri"`
+	Version int    `json:"version"`
+}
+
+// TextDocumentContentChangeEvent describes a content change in a text document.
+// With full sync, Text contains the entire new content.
+type TextDocumentContentChangeEvent struct {
+	Text string `json:"text"`
 }
 
 // DidSaveTextDocumentParams is sent when a document is saved.
