@@ -1,0 +1,84 @@
+name: LSP
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'internal/lsp/**'
+      - 'cmd/lsp.go'
+      - '.github/workflows/lsp.yml'
+  pull_request:
+    paths:
+      - 'internal/lsp/**'
+      - 'cmd/lsp.go'
+      - '.github/workflows/lsp.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check-static:
+    name: Static checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build -ldflags "-X github.com/elastic/elastic-package/internal/version.CommitHash=$(git describe --always --long --dirty)" -o elastic-package
+
+      - name: Format (goimports)
+        run: |
+          go run golang.org/x/tools/cmd/goimports -local github.com/elastic/elastic-package/ -l . | tee /tmp/goimports.out
+          if [ -s /tmp/goimports.out ]; then
+            echo "::error::goimports found formatting issues in the files listed above"
+            exit 1
+          fi
+
+      - name: Lint (staticcheck)
+        run: go run honnef.co/go/tools/cmd/staticcheck ./...
+
+      - name: License headers
+        run: go run github.com/elastic/go-licenser -license Elastic -d
+
+      - name: go mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+  test:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run LSP tests
+        shell: bash
+        run: |
+          set -o pipefail
+          go test -v -count=1 -race -coverprofile=coverage.out ./internal/lsp/... 2>&1 | tee test-output.txt
+
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output-${{ matrix.os }}
+          path: test-output.txt
+
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lsp-coverage
+          path: coverage.out
